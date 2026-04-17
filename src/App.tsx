@@ -92,7 +92,7 @@ export default function App() {
             </p>
           </div>
           <div className="text-[10px] uppercase tracking-[1px] opacity-60">
-            Creado con 💜 por Eleonor AI
+            Creado con 💜 por Eleonor
           </div>
         </div>
       </footer>

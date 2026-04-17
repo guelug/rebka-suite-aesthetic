@@ -14,6 +14,7 @@ interface CreateStickerProps {
 
 export default function CreateSticker({ onStickerGenerated }: CreateStickerProps) {
   const [prompt, setPrompt] = useState('');
+  const [urlInstructions, setUrlInstructions] = useState('');
   const [mode, setMode] = useState<Mode>('single');
   const [loading, setLoading] = useState(false);
   const [statusText, setStatusText] = useState('');
@@ -101,19 +102,28 @@ export default function CreateSticker({ onStickerGenerated }: CreateStickerProps
         
         <p className="font-sans font-semibold text-sm uppercase tracking-wide text-dim border-l-2 border-accent pl-4">
           {mode === 'url' 
-            ? "Introduce la URL de una empresa. La IA analizará la marca, productos y temática usando Google Search para generar un set corporativo."
+            ? "Introduce la URL de una empresa. Eleonor analizará la marca, productos y temática usando Google Search para generar un set corporativo."
             : "Describe tu idea. Utilizaremos Investigación con Gemini para crear la mejor parodia corporativa y fondo transparente."}
         </p>
         
         {mode === 'url' ? (
-          <input 
-            type="url"
-            className="w-full p-4 font-sans text-lg editorial-border bg-[#F9F9F9] outline-none focus:border-accent transition-colors"
-            placeholder="Ej. https://startup.com"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            disabled={loading}
-          />
+          <div className="flex flex-col gap-4">
+            <input 
+              type="url"
+              className="w-full p-4 font-sans text-lg editorial-border bg-[#F9F9F9] outline-none focus:border-accent transition-colors"
+              placeholder="Ej. https://startup.com"
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              disabled={loading}
+            />
+            <textarea
+              className="w-full h-24 p-4 font-sans text-base editorial-border bg-[#F9F9F9] outline-none focus:border-accent transition-colors resize-none"
+              placeholder="Instrucciones específicas para Eleonor: ¿En qué quieres que se centre al investigar? (Ej: enfócate en sus colores corporativos azules, o en su mascota del logo...)"
+              value={urlInstructions}
+              onChange={(e) => setUrlInstructions(e.target.value)}
+              disabled={loading}
+            />
+          </div>
         ) : (
           <textarea 
             className="w-full h-32 p-4 font-sans text-lg editorial-border bg-[#F9F9F9] outline-none focus:border-accent transition-colors resize-none"
