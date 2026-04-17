@@ -1,0 +1,223 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=Inter:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-serif: "Playfair Display", Georgia, serif;
+  --font-sans: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  
+  --color-bg: #F0F0EB;
+  --color-ink: #121212;
+  --color-accent: #FF6B9D;
+  --color-accent-secondary: #4ECDC4;
+  --color-dim: #8D99AE;
+  --color-paper: #FFFFFF;
+}
+
+:root {
+  --bg: #F0F0EB;
+  --ink: #121212;
+  --accent: #FF6B9D;
+  --accent-secondary: #4ECDC4;
+  --dim: #8D99AE;
+  --paper: #FFFFFF;
+  --f-sans: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --f-serif: "Playfair Display", Georgia, serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--f-sans);
+  background-color: var(--bg);
+  color: var(--ink);
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+}
+
+.pattern-bg {
+  background-image: radial-gradient(var(--dim) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-color: var(--bg);
+}
+
+.editorial-border {
+  border: 2px solid var(--ink);
+}
+
+.editorial-border-bottom {
+  border-bottom: 2px solid var(--ink);
+}
+
+.editorial-border-left {
+  border-left: 2px solid var(--ink);
+}
+
+.editorial-border-top {
+  border-top: 2px solid var(--ink);
+}
+
+.editorial-border-right {
+  border-right: 2px solid var(--ink);
+}
+
+.section-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+  font-weight: 800;
+  border-bottom: 1px solid var(--ink);
+  padding-bottom: 8px;
+  margin-bottom: 15px;
+  display: block;
+  font-family: var(--f-sans);
+}
+
+.btn-editorial {
+  background: var(--ink);
+  color: var(--bg);
+  border: none;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  cursor: pointer;
+  font-family: var(--f-sans);
+  transition: all 0.2s ease;
+}
+
+.btn-editorial:hover:not(:disabled) {
+  background: var(--accent);
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.btn-editorial:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-editorial-outline {
+  background: transparent;
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  cursor: pointer;
+  font-family: var(--f-sans);
+  transition: all 0.2s ease;
+}
+
+.btn-editorial-outline:hover:not(:disabled) {
+  background: var(--ink);
+  color: var(--bg);
+}
+
+.style-tag {
+  border: 1px solid var(--ink);
+  padding: 6px 14px;
+  font-size: 11px;
+  margin: 0 6px 6px 0;
+  display: inline-block;
+  cursor: pointer;
+  text-transform: uppercase;
+  font-weight: 700;
+  font-family: var(--f-sans);
+  letter-spacing: 0.5px;
+  transition: all 0.2s ease;
+}
+
+.style-tag:hover {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.style-tag.selected {
+  background-color: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.paper-shadow {
+  box-shadow: 8px 8px 0 rgba(18, 18, 18, 0.15);
+}
+
+.paper-shadow-lg {
+  box-shadow: 12px 12px 0 rgba(18, 18, 18, 0.2);
+}
+
+.font-serif {
+  font-family: var(--f-serif);
+}
+
+.font-sans {
+  font-family: var(--f-sans);
+}
+
+.text-accent {
+  color: var(--accent);
+}
+
+.bg-accent {
+  background-color: var(--accent);
+}
+
+.border-accent {
+  border-color: var(--accent);
+}
+
+.text-ink {
+  color: var(--ink);
+}
+
+.text-dim {
+  color: var(--dim);
+}
+
+.bg-paper {
+  background-color: var(--paper);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg);
+  border-left: 1px solid var(--ink);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--ink);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+
+/* Animations */
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-in {
+  animation: slideIn 0.5s ease forwards;
+}
+
+.stagger-1 { animation-delay: 0.1s; }
+.stagger-2 { animation-delay: 0.2s; }
+.stagger-3 { animation-delay: 0.3s; }
+.stagger-4 { animation-delay: 0.4s; }
