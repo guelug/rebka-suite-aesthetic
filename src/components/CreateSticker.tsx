@@ -12,6 +12,9 @@ interface CreateStickerProps {
   onStickerGenerated: (base64: string) => void;
 }
 
+// Configuración de Gemini - reemplazar con tu API key
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
+
 export default function CreateSticker({ onStickerGenerated }: CreateStickerProps) {
   const [prompt, setPrompt] = useState('');
   const [urlInstructions, setUrlInstructions] = useState('');
@@ -21,33 +24,138 @@ export default function CreateSticker({ onStickerGenerated }: CreateStickerProps
   const [results, setResults] = useState<StickerResult[]>([]);
   const [error, setError] = useState('');
 
+  const generateWithGemini = async (targetPrompt: string, index: number, total: number): Promise<string | null> => {
+    setStatusText(total > 1 
+      ? `Generando sticker con logo y texto (${index + 1}/${total})...` 
+      : 'Generando sticker corporativo en español...'
+    );
+
+    try {
+      const baseInstruction = mode === 'single' 
+        ? `Incorporate explicit visual references to real company logos, specific brands, or corporate mascots related to: "${targetPrompt}". The sticker MUST include catchy typography.`
+        : `Subject: ${targetPrompt}`;
+
+      const enhancedPrompt = `A die-cut WhatsApp sticker design, perfectly isolated on a completely transparent background layer (pure alpha background), 2D flat vector art style, thick clean white border around the character. NO background scenario or grid. High quality. REQUIREMENT: INTEGRATE ACTUAL REAL BRAND LOGOS, UI, OR EXACT CORPORATE REFERENCES AS INSTRUCTED. MANDATORY RULE: ALL TEXT, LETTERS, TYPOGRAPHY, OR SPEECH BUBBLES IN THE IMAGE ABSOLUTELY MUST BE WRITTEN IN PERFECT SPANISH (CASTELLANO). DO NOT USE ENGLISH TEXT.\n\n${baseInstruction}`;
+
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-preview-image-generation:generateContent?key=${GEMINI_API_KEY}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{ text: enhancedPrompt }]
+          }],
+          generationConfig: {
+            responseModalities: ["TEXT", "IMAGE"]
+          }
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`API Error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      // Extraer imagen base64 de la respuesta
+      for (const candidate of data.candidates || []) {
+        for (const part of candidate.content?.parts || []) {
+          if (part.inlineData && part.inlineData.mimeType?.startsWith('image/')) {
+            return part.inlineData.data;
+          }
+        }
+      }
+      
+      return null;
+    } catch (err) {
+      console.error('Error generando imagen:', err);
+      return null;
+    }
+  };
+
+  const researchWithGemini = async (url: string, instructions: string): Promise<string[]> => {
+    setStatusText('Investigando empresa con Eleonor...');
+    
+    try {
+      const researchPrompt = `Visita e investiga profundamente la empresa en la URL: "${url}". Usa Google Search para extraer detalles precisos: formas exactas de su logotipo real, colores corporativos, UI de su producto o mascotas. ${instructions.trim() ? `\n\nATENCIÓN, EL USUARIO REQUIERE QUE TE ENFOQUES ESPECÍFICAMENTE EN ESTO AL INVESTIGAR Y CREAR: "${instructions}"\n\n` : ''}Diseña 3 conceptos creativos para stickers de WhatsApp que INCLUYAN EXPLÍCITAMENTE y de manera visible el logo real de la empresa investigada o sus elementos visuales corporativos. IMPORTANTE: Los stickers deben tener texto o frases divertidas, y TODO EL TEXTO DEBE ESTAR ESCRITO ESTRICTAMENTE EN ESPAÑOL (Castellano). Responde ESTRICTAMENTE un JSON array de 3 strings descriptivos. (Escribe el prompt visual en inglés para la IA de imagen, especificando qué logo dibujar y qué palabras exactas en español generar tipográficamente).`;
+
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_API_KEY}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{ text: researchPrompt }]
+          }],
+          tools: [{ 
+            google_search: {} 
+          }]
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Research API Error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      
+      // Intentar extraer JSON array
+      try {
+        const match = text.match(/\[[\s\S]*\]/);
+        if (match) {
+          return JSON.parse(match[0]);
+        }
+      } catch (e) {
+        console.error('Error parseando JSON:', e);
+      }
+      
+      // Fallback: dividir por líneas
+      return text.split('\n').filter(line => line.trim()).slice(0, 3);
+    } catch (err) {
+      console.error('Error en research:', err);
+      return [url + ' - concepto 1', url + ' - concepto 2', url + ' - concepto 3'];
+    }
+  };
+
   const handleGenerate = async () => {
     if (!prompt.trim()) return;
+    
+    if (!GEMINI_API_KEY) {
+      setError("Falta configurar la API key de Gemini. Añade VITE_GEMINI_API_KEY en tu .env");
+      return;
+    }
+
     setLoading(true);
     setError('');
     setResults([]);
 
     try {
-      const targetPrompts = mode === 'set' || mode === 'url' 
-        ? [prompt + ' 1', prompt + ' 2', prompt + ' 3'] 
-        : [prompt];
+      let targetPrompts: string[] = [prompt];
+
+      // Si es modo URL, investigar primero
+      if (mode === 'url') {
+        targetPrompts = await researchWithGemini(prompt, urlInstructions);
+      }
 
       const newResults: StickerResult[] = [];
       
       for (let i = 0; i < targetPrompts.length; i++) {
-        setStatusText(targetPrompts.length > 1 
-          ? `Generando sticker corporativo ${i+1} de ${targetPrompts.length}...` 
-          : 'Generando sticker...'
-        );
+        const base64Data = await generateWithGemini(targetPrompts[i], i, targetPrompts.length);
         
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        if (base64Data) {
+          newResults.push({
+            base64: base64Data,
+            url: `data:image/png;base64,${base64Data}`
+          });
+        }
         
-        const base64Data = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
-        
-        newResults.push({
-          base64: base64Data,
-          url: `data:image/png;base64,${base64Data}`
-        });
+        // Pequeña pausa entre generaciones
+        if (i < targetPrompts.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
       }
 
       if (newResults.length > 0) {
@@ -56,7 +164,7 @@ export default function CreateSticker({ onStickerGenerated }: CreateStickerProps
           onStickerGenerated(newResults[0].base64);
         }
       } else {
-        setError("No se pudo generar la imagen. Intenta con otro texto o URL.");
+        setError("No se pudo generar ninguna imagen. Verifica tu API key o intenta con otro prompt.");
       }
     } catch (err: any) {
       console.error(err);
@@ -80,19 +188,19 @@ export default function CreateSticker({ onStickerGenerated }: CreateStickerProps
           
           <div className="flex flex-col sm:flex-row border-2 border-ink bg-gray-50 text-xs font-bold uppercase tracking-widest overflow-hidden">
             <button 
-              onClick={() => { setMode('single'); setPrompt(''); }}
+              onClick={() => { setMode('single'); setPrompt(''); setUrlInstructions(''); }}
               className={`px-4 py-3 transition-colors ${mode === 'single' ? 'bg-ink text-white' : 'hover:bg-gray-200 text-ink'}`}
             >
               1 STICKER
             </button>
             <button 
-              onClick={() => { setMode('set'); setPrompt(''); }}
+              onClick={() => { setMode('set'); setPrompt(''); setUrlInstructions(''); }}
               className={`px-4 py-3 sm:border-l-2 border-t-2 sm:border-t-0 border-ink transition-colors flex items-center justify-center gap-2 ${mode === 'set' ? 'bg-ink text-white' : 'hover:bg-gray-200 text-ink'}`}
             >
               SET MÚLTIPLE (x3) <Sparkles className="w-3 h-3" />
             </button>
             <button 
-              onClick={() => { setMode('url'); setPrompt(''); }}
+              onClick={() => { setMode('url'); setPrompt(''); setUrlInstructions(''); }}
               className={`px-4 py-3 sm:border-l-2 border-t-2 sm:border-t-0 border-ink transition-colors flex items-center justify-center gap-2 ${mode === 'url' ? 'bg-ink text-white' : 'hover:bg-gray-200 text-ink'}`}
             >
               EMPRESA URL (x3) <Globe className="w-3 h-3" />
@@ -102,7 +210,7 @@ export default function CreateSticker({ onStickerGenerated }: CreateStickerProps
         
         <p className="font-sans font-semibold text-sm uppercase tracking-wide text-dim border-l-2 border-accent pl-4">
           {mode === 'url' 
-            ? "Introduce la URL de una empresa. Eleonor analizará la marca, productos y temática usando Google Search para generar un set corporativo."
+            ? "Introduce la URL de una empresa y en qué quieres que Eleonor se enfoque. Usaremos Google Search para analizarla."
             : "Describe tu idea. Utilizaremos Investigación con Gemini para crear la mejor parodia corporativa y fondo transparente."}
         </p>
         
@@ -111,14 +219,14 @@ export default function CreateSticker({ onStickerGenerated }: CreateStickerProps
             <input 
               type="url"
               className="w-full p-4 font-sans text-lg editorial-border bg-[#F9F9F9] outline-none focus:border-accent transition-colors"
-              placeholder="Ej. https://startup.com"
+              placeholder="URL de la empresa (Ej. https://netflix.com)"
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               disabled={loading}
             />
-            <textarea
-              className="w-full h-24 p-4 font-sans text-base editorial-border bg-[#F9F9F9] outline-none focus:border-accent transition-colors resize-none"
-              placeholder="Instrucciones específicas para Eleonor: ¿En qué quieres que se centre al investigar? (Ej: enfócate en sus colores corporativos azules, o en su mascota del logo...)"
+            <textarea 
+              className="w-full h-24 p-4 font-sans text-sm editorial-border bg-[#F9F9F9] outline-none focus:border-accent transition-colors resize-none"
+              placeholder="Opcional: ¿Qué quieres destacar? (Ej. Fíjate en su mascota, haz un chiste de sus precios, enfócate en su nuevo producto...)"
               value={urlInstructions}
               onChange={(e) => setUrlInstructions(e.target.value)}
               disabled={loading}
@@ -127,7 +235,7 @@ export default function CreateSticker({ onStickerGenerated }: CreateStickerProps
         ) : (
           <textarea 
             className="w-full h-32 p-4 font-sans text-lg editorial-border bg-[#F9F9F9] outline-none focus:border-accent transition-colors resize-none"
-            placeholder={mode === 'set' ? "Ej. Un set de stickers de tecnología retro y programación..." : "Ej. Un payaso de comida rápida consumido por la cafeína..."}
+            placeholder={mode === 'set' ? "Ej. Un set de stickers sobre una marca real de móviles o zapatillas..." : "Ej. Un sticker con el logo real de una cadena de fast food..."}
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             disabled={loading}
