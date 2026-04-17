@@ -12,6 +12,31 @@ interface CreateStickerProps {
   onStickerGenerated: (base64: string) => void;
 }
 
+const parseMultipleItems = (input: string): string[] | null => {
+    // Detectar patrones como "3 objetos: manzana, pera, plátano" o "manzana, pera y plátano"
+    const numberedMatch = input.match(/(\d+)\s*(?:objetos?|items?|stickers?|cosas?)[:\s]+(.+)/i);
+    if (numberedMatch) {
+      const count = parseInt(numberedMatch[1]);
+      const itemsPart = numberedMatch[2];
+      // Separar por comas, "y", o saltos de línea
+      const items = itemsPart.split(/[,;]|\by\b|\n/).map(s => s.trim()).filter(s => s.length > 0);
+      if (items.length >= 2 && items.length <= 5) {
+        return items.slice(0, Math.min(count, 5)); // Máximo 5
+      }
+    }
+    
+    // Detectar lista separada por comas o "y"
+    const listMatch = input.match(/^([^,]+(?:,\s*[^,]+)*(?:\s+y\s+[^,]+)?)$/);
+    if (listMatch && !input.match(/^(un|una|el|la|los|las)\s/i)) {
+      const items = input.split(/[,;]|\by\b/).map(s => s.trim()).filter(s => s.length > 2);
+      if (items.length >= 2 && items.length <= 5) {
+        return items;
+      }
+    }
+    
+    return null;
+  };
+
 // Configuración de Gemini - reemplazar con tu API key
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
 
@@ -135,9 +160,16 @@ export default function CreateSticker({ onStickerGenerated }: CreateStickerProps
     try {
       let targetPrompts: string[] = [prompt];
 
-      // Si es modo URL, investigar primero
-      if (mode === 'url') {
+      // Detectar múltiples items en el prompt (ej: "3 objetos: manzana, pera, plátano")
+      const multipleItems = parseMultipleItems(prompt);
+      if (multipleItems) {
+        targetPrompts = multipleItems;
+      } else if (mode === 'url') {
+        // Si es modo URL, investigar primero
         targetPrompts = await researchWithGemini(prompt, urlInstructions);
+      } else if (mode === 'set') {
+        // En modo set, expandir el prompt en 3 variaciones
+        targetPrompts = [`${prompt} - variación 1`, `${prompt} - variación 2`, `${prompt} - variación 3`];
       }
 
       const newResults: StickerResult[] = [];
@@ -235,7 +267,7 @@ export default function CreateSticker({ onStickerGenerated }: CreateStickerProps
         ) : (
           <textarea 
             className="w-full h-32 p-4 font-sans text-lg editorial-border bg-[#F9F9F9] outline-none focus:border-accent transition-colors resize-none"
-            placeholder={mode === 'set' ? "Ej. Un set de stickers sobre una marca real de móviles o zapatillas..." : "Ej. Un sticker con el logo real de una cadena de fast food..."}
+            placeholder={mode === 'set' ? "Ej. 3 objetos: manzana, pera y plátano / o una temática para variaciones..." : "Ej. Un sticker con el logo real de una cadena de fast food... O escribe varios: manzana, pera, plátano"}
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             disabled={loading}
