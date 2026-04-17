@@ -1,85 +1,90 @@
-import { useState } from 'react';
-import { Sparkles, Image, Shirt, Presentation, Palette } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import CreateSticker from './components/CreateSticker';
 import Presentations from './components/Presentations';
-import Stickers from './components/Stickers';
 import Merchandising from './components/Merchandising';
 import ImageEditor from './components/ImageEditor';
+import { Sparkles, Presentation, Shirt, Palette, CheckCircle2 } from 'lucide-react';
 
-type Tab = 'presentations' | 'stickers' | 'merchandising' | 'editor';
+type Tab = 'create' | 'presentations' | 'merchandising' | 'editor';
 
-function App() {
-  const [activeTab, setActiveTab] = useState<Tab>('presentations');
+export default function App() {
+  const [activeTab, setActiveTab] = useState<Tab>('create');
+  const [sharedBase64, setSharedBase64] = useState<string | null>(null);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [activeTab]);
 
   const tabs = [
+    { id: 'create' as Tab, label: 'Crear Sticker', icon: Sparkles },
     { id: 'presentations' as Tab, label: 'Presentaciones', icon: Presentation },
-    { id: 'stickers' as Tab, label: 'Stickers WhatsApp', icon: Sparkles },
     { id: 'merchandising' as Tab, label: 'Merchandising', icon: Shirt },
     { id: 'editor' as Tab, label: 'Editor', icon: Palette },
   ];
 
+  const switchToEditor = () => {
+    setActiveTab('editor');
+  };
+
   return (
-    <div className="min-h-screen pattern-bg">
-      {/* Header */}
-      <header className="w-full bg-paper editorial-border-bottom p-6 md:p-8">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-baseline">
-          <div>
-            <h1 className="font-serif italic text-4xl md:text-5xl font-black tracking-tighter text-ink">
-              REBKA
-            </h1>
-            <p className="text-xs uppercase tracking-[3px] font-bold text-dim mt-1">
-              Creative Suite / 2026
-            </p>
+    <div className="min-h-screen pattern-bg flex flex-col items-center">
+      <header className="w-full bg-paper editorial-border-bottom p-6 md:p-8 flex flex-col md:flex-row justify-between items-baseline mb-8">
+        <div>
+          <div className="font-serif italic text-4xl md:text-5xl font-black tracking-tighter text-ink">
+            REBKA
           </div>
-          <div className="flex items-center gap-2 mt-4 md:mt-0">
-            <div className="w-3 h-3 rounded-full bg-accent"></div>
-            <span className="text-[10px] uppercase tracking-[2px] font-bold">
-              by Rebeca Caparrós
-            </span>
+          <div className="text-[11px] uppercase tracking-[2px] font-bold text-dim mt-1">
+            Creative Suite / 2026
           </div>
+        </div>
+        <div className="flex items-center gap-2 mt-4 md:mt-0">
+          <div className="w-3 h-3 rounded-full bg-accent"></div>
+          <span className="text-[10px] uppercase tracking-[2px] font-bold">
+            by Rebeca Caparrós
+          </span>
         </div>
       </header>
 
-      {/* Navigation */}
-      <nav className="max-w-7xl mx-auto px-4 py-6">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`
-                  flex flex-col items-center gap-2 p-4 md:p-6
-                  editorial-border transition-all duration-200
-                  ${activeTab === tab.id
-                    ? 'bg-ink text-white shadow-[6px_6px_0_#FF6B9D]'
-                    : 'bg-paper text-ink hover:shadow-[4px_4px_0_rgba(18,18,18,0.2)]'
-                  }
-                `}
-              >
-                <Icon className="w-6 h-6" />
-                <span className="text-[10px] md:text-xs uppercase tracking-[1px] font-bold text-center">
-                  {tab.label}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </nav>
+      <div className="flex w-full max-w-4xl px-4 gap-2 mb-8 flex-wrap md:flex-nowrap">
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex-1 py-4 text-center font-bold text-sm tracking-[1px] uppercase transition-all editorial-border min-w-[140px] ${
+                activeTab === tab.id
+                  ? 'bg-ink text-white shadow-[4px_4px_0_#FF6B9D]'
+                  : 'bg-white text-ink hover:bg-gray-100'
+              }`}
+            >
+              <Icon className="w-5 h-5 mx-auto mb-1" />
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
 
-      {/* Content */}
-      <main className="max-w-7xl mx-auto px-4 pb-16">
-        <div className="animate-slide-in">
-          {activeTab === 'presentations' && <Presentations />}
-          {activeTab === 'stickers' && <Stickers />}
-          {activeTab === 'merchandising' && <Merchandising />}
-          {activeTab === 'editor' && <ImageEditor />}
-        </div>
-      </main>
+      <div className="w-full flex-grow flex flex-col justify-start">
+        {activeTab === 'create' && (
+          <CreateSticker onStickerGenerated={(base64) => setSharedBase64(base64)} />
+        )}
+        {activeTab === 'presentations' && <Presentations />}
+        {activeTab === 'merchandising' && <Merchandising />}
+        {activeTab === 'editor' && <ImageEditor />}
+      </div>
 
-      {/* Footer */}
+      {sharedBase64 && activeTab === 'create' && (
+        <button
+          onClick={switchToEditor}
+          className="btn-editorial fixed bottom-6 right-6 px-6 py-4 flex items-center gap-2 editorial-border shadow-[10px_10px_0_rgba(0,0,0,0.1)] z-50 animate-bounce"
+        >
+          <CheckCircle2 className="w-5 h-5" /> Sticker listo! Editar imagen
+        </button>
+      )}
+
       <footer className="w-full bg-ink text-white p-6 mt-auto">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+        <div className="max-w-4xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="text-center md:text-left">
             <p className="font-serif italic text-lg">REBKA</p>
             <p className="text-[10px] uppercase tracking-[2px] opacity-60">
@@ -94,5 +99,3 @@ function App() {
     </div>
   );
 }
-
-export default App;
