@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Palette, Download, Loader2, Upload, RefreshCw, Sun, Contrast, Droplet, Blur, Crop, RotateCw, FlipHorizontal, Type } from 'lucide-react';
+import { Palette, Download, Loader2, Upload, RefreshCw, Sun, Contrast, Droplet, Droplets, Crop, RotateCw, FlipHorizontal, Type } from 'lucide-react';
 
 interface Filter {
   id: string;
@@ -24,7 +24,7 @@ export default function ImageEditor() {
     { id: 'grayscale', name: 'B&W', icon: <Contrast className="w-4 h-4" /> },
     { id: 'sepia', name: 'Sepia', icon: <Sun className="w-4 h-4" /> },
     { id: 'vintage', name: 'Vintage', icon: <Droplet className="w-4 h-4" /> },
-    { id: 'blur', name: 'Blur', icon: <Blur className="w-4 h-4" /> },
+    { id: 'blur', name: 'Blur', icon: <Droplets className="w-4 h-4" /> },
     { id: 'enhance', name: 'Enhance', icon: <RefreshCw className="w-4 h-4" /> },
   ];
 
