@@ -9,7 +9,7 @@ import VoiceClone from './components/VoiceClone';
 import Settings from './components/Settings';
 import { Sparkles, Presentation, Shirt, Palette, Music, Mic, KeyRound, CheckCircle2 } from 'lucide-react';
 
-type Tab = 'create' | 'presentations' | 'merchandising' | 'editor' | 'music' | 'voice' | 'settings';
+type Tab = 'create' | 'presentations' | 'merchandising' | 'editor' | 'music' | 'voice';
 
 export default function WrappedApp() {
   return (
@@ -20,6 +20,7 @@ export default function WrappedApp() {
 }
 
 function App() {
+  const [showSettings, setShowSettings] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('create');
   const [sharedBase64, setSharedBase64] = useState<string | null>(null);
 
@@ -34,7 +35,6 @@ function App() {
     { id: 'editor' as Tab, label: 'Editor', icon: Palette },
     { id: 'music' as Tab, label: 'Música AI', icon: Music },
     { id: 'voice' as Tab, label: 'Voice Clone', icon: Mic },
-    { id: 'settings' as Tab, label: 'Ajustes', icon: KeyRound },
   ];
 
   const switchToEditor = () => {
@@ -52,11 +52,20 @@ function App() {
             Creative Suite / 2026
           </div>
         </div>
-        <div className="flex items-center gap-2 mt-4 md:mt-0">
-          <div className="w-3 h-3 rounded-full bg-accent"></div>
-          <span className="text-[10px] uppercase tracking-[2px] font-bold">
-            by Eleonor
-          </span>
+        <div className="flex items-center gap-3 mt-4 md:mt-0">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-accent"></div>
+            <span className="text-[10px] uppercase tracking-[2px] font-bold">
+              by Eleonor
+            </span>
+          </div>
+          <button
+            onClick={() => setShowSettings(!showSettings)}
+            className="p-2 hover:bg-gray-100 rounded-full transition-colors border-2 border-ink"
+            title="Configurar API Keys"
+          >
+            <KeyRound className="w-4 h-4 text-ink" />
+          </button>
         </div>
       </header>
 
@@ -89,8 +98,15 @@ function App() {
         {activeTab === 'editor' && <ImageEditor />}
         {activeTab === 'music' && <MusicGenerator />}
         {activeTab === 'voice' && <VoiceClone />}
-        {activeTab === 'settings' && <Settings />}
       </div>
+
+      {showSettings && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowSettings(false)}>
+          <div className="max-h-[90vh] overflow-auto w-full max-w-2xl" onClick={(e) => e.stopPropagation()}>
+            <Settings onClose={() => setShowSettings(false)} />
+          </div>
+        </div>
+      )}
 
       {sharedBase64 && activeTab === 'create' && (
         <button

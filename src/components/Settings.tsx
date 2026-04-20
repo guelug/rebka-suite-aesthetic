@@ -1,8 +1,12 @@
 import { useState } from 'react';
 import { useApiKeys } from '../context/ApiContext';
-import { KeyRound, Eye, EyeOff, Save, Check } from 'lucide-react';
+import { KeyRound, Eye, EyeOff, Save, Check, X } from 'lucide-react';
 
-export default function Settings() {
+interface SettingsProps {
+  onClose?: () => void;
+}
+
+export default function Settings({ onClose }: SettingsProps) {
   const { keys, setKey, hasKey } = useApiKeys();
   const [showGemini, setShowGemini] = useState(false);
   const [showMinimax, setShowMinimax] = useState(false);
@@ -18,11 +22,19 @@ export default function Settings() {
   };
 
   return (
-    <div className="flex flex-col gap-8 w-full max-w-4xl mx-auto p-4 md:p-6 mb-16">
-      <div className="bg-white editorial-border p-8 flex flex-col gap-6 shadow-[10px_10px_0_rgba(0,0,0,0.05)]">
+    <div className="flex flex-col gap-8 w-full max-w-2xl mx-auto">
+      <div className="bg-white editorial-border p-8 flex flex-col gap-6 shadow-[10px_10px_0_rgba(0,0,0,0.05)] relative">
+        {onClose && (
+          <button 
+            onClick={onClose}
+            className="absolute top-4 right-4 p-2 hover:bg-gray-100 rounded-full transition-colors"
+          >
+            <X className="w-5 h-5 text-ink" />
+          </button>
+        )}
         <div className="flex items-center gap-3">
           <KeyRound className="w-6 h-6 text-accent" />
-          <h2 className="font-serif text-5xl tracking-tighter leading-[0.8] uppercase">CONFIGURACIÓN.</h2>
+          <h2 className="font-serif text-4xl tracking-tighter leading-[0.8] uppercase">AJUSTES.</h2>
         </div>
 
         <p className="font-sans font-semibold text-sm uppercase tracking-wide text-dim border-l-2 border-accent pl-4">
