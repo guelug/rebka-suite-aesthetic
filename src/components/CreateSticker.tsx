@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Sparkles, Download, Loader2, Globe, Wand2, Search, ArrowRight, Upload, Edit } from 'lucide-react';
+import { useApiKeys } from '../context/ApiContext';
+import { Sparkles, Download, Loader2, Globe, Wand2, Search, ArrowRight, Upload, Edit, Zap } from 'lucide-react';
 
 type Mode = 'single' | 'set' | 'url' | 'modify' | 'variations';
+type Provider = 'gemini' | 'minimax';
 
 interface StickerResult {
   base64: string;
@@ -12,10 +14,9 @@ interface CreateStickerProps {
   onStickerGenerated: (base64: string) => void;
 }
 
-// Configuración de Gemini - reemplazar con tu API key
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
-
 export default function CreateSticker({ onStickerGenerated }: CreateStickerProps) {
+  const { hasKey } = useApiKeys();
+  const [provider, setProvider] = useState<Provider>('gemini');
   const [prompt, setPrompt] = useState('');
   const [urlInstructions, setUrlInstructions] = useState('');
   const [referenceImages, setReferenceImages] = useState<string[]>([]);
@@ -24,6 +25,13 @@ export default function CreateSticker({ onStickerGenerated }: CreateStickerProps
   const [statusText, setStatusText] = useState('');
   const [results, setResults] = useState<StickerResult[]>([]);
   const [error, setError] = useState('');
+
+  // Auto-select provider based on available keys
+  useEffect(() => {
+    if (!hasKey('gemini') && hasKey('minimax')) {
+      setProvider('minimax');
+    }
+  }, [hasKey]);
 
   // Handle paste for reference images
   useEffect(() => {
@@ -47,13 +55,144 @@ export default function CreateSticker({ onStickerGenerated }: CreateStickerProps
     return () => window.removeEventListener('paste', handlePaste);
   }, [mode]);
 
+  const getApiKeys = () => {
+    const saved = localStorage.getItem('rebka_api_keys');
+    return saved ? JSON.parse(saved) : {};
+  };
+
+  // Generate with Minimax
+  const generateWithMinimax = async (targetPrompt: string, index: number, total: number): Promise<string | null> => {
+    setStatusText(
+      total > 1 ? `Generando sticker (${index + 1}/${total}) con Minimax...` : 'Generando sticker con Minimax...'
+    );
+
+    try {
+      const keys = getApiKeys();
+      
+      const enhancedPrompt = `A die-cut WhatsApp sticker design, perfectly isolated on completely transparent background, 2D flat vector art style, thick clean white border. NO background. High quality. ALL TEXT MUST BE IN PERFECT SPANISH. ${targetPrompt}`;
+
+      const payload: any = {
+        model: 'image-01',
+        prompt: enhancedPrompt,
+        aspect_ratio: '1:1',
+        response_format: 'base64',
+        num_images: 1
+      };
+
+      // If we have reference images (modify/variations mode)
+      if ((mode === 'modify' || mode === 'variations') && referenceImages.length > 0) {
+        // Minimax supports subject_reference with image URLs
+        // For base64 images, we'd need to upload them first, but let's try a simplified approach
+        // Actually, for now, we'll skip reference images with Minimax since it needs URLs
+        // or we need to implement file upload first
+      }
+
+      const response = await fetch('https://api.minimax.io/v1/image_generation', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${keys.minimax}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        throw new Error(`Minimax API Error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      // Minimax returns base64 in data.image_base64 array
+      const base64Images = data.data?.image_base64 || data.image_base64;
+      if (base64Images && base64Images.length > 0) {
+        return base64Images[0];
+      }
+      
+      return null;
+    } catch (err) {
+      console.error('Error generando con Minimax:', err);
+      return null;
+    }
+  };
+
+  // Generate with Gemini
+  const generateWithGemini = async (targetPrompt: string, index: number, total: number): Promise<string | null> => {
+    const isModify = mode === 'modify';
+    const isVariations = mode === 'variations';
+    
+    setStatusText(
+      isModify ? 'Aplicando modificación agresiva en imagen local...' :
+      isVariations ? `Generando variación individual (${index+1}/${total})...` :
+      total > 1 ? `Generando sticker con logo y texto (${index + 1}/${total})...` :
+      'Generando sticker corporativo en español...'
+    );
+
+    try {
+      const keys = getApiKeys();
+      
+      let enhancedPrompt: string;
+      
+      if (isModify) {
+        enhancedPrompt = `A die-cut WhatsApp sticker design, perfectly isolated on a completely transparent background layer, 2D flat vector art style, thick clean white border around the character. \n\nCRITICAL MODIFICATION REQUEST: "${targetPrompt}". \n\nMANDATORY: You MUST forcefully transform the provided reference image based on the MODIFICATION REQUEST. Do NOT just copy the source. Add the requested items clearly and obviously in the final image. ALL TEXT OR TYPOGRAPHY IN THE FINAL IMAGE MUST BE IN PERFECT SPANISH.`;
+      } else if (isVariations) {
+        enhancedPrompt = `A die-cut WhatsApp sticker design, perfectly isolated on a completely transparent background layer, 2D flat vector art style, thick clean white border around the character. \n\nVARIATION REQUEST: "${targetPrompt}". \n\nMANDATORY REQUIREMENT: You MUST keep the physical visual identity, character, or object of the provided reference image(s). Do NOT change the main subject. But you MUST apply this specific variation perfectly. ALL TEXT TYPOGRAPHY MUST BE IN SPANISH STRICTLY.`;
+      } else {
+        const baseInstruction = mode === 'single' 
+          ? `Incorporate explicit visual references to real company logos, specific brands, or corporate mascots related to: "${targetPrompt}". The sticker MUST include catchy typography.`
+          : `Subject: ${targetPrompt}`;
+        
+        enhancedPrompt = `A die-cut WhatsApp sticker design, perfectly isolated on a completely transparent background layer (pure alpha background), 2D flat vector art style, thick clean white border around the object/character. NO background scenario or grid. High quality. REQUIREMENT: INTEGRATE ACTUAL REAL BRAND LOGOS, SPECIFIC PRODUCTS, UI, OR EXACT CORPORATE REFERENCES AS INSTRUCTED. MANDATORY RULE: ALL TEXT, LETTERS, TYPOGRAPHY, OR SPEECH BUBBLES IN THE IMAGE ABSOLUTELY MUST BE WRITTEN IN PERFECT SPANISH (CASTELLANO). DO NOT USE ENGLISH TEXT. \n\n${baseInstruction}`;
+      }
+
+      let contentsPayload: any = [{ text: enhancedPrompt }];
+      
+      if ((isModify || isVariations) && referenceImages.length > 0) {
+        const inlineDataParts = referenceImages.map(img => {
+          const base64Data = img.includes(',') ? img.split(',')[1] : img;
+          return { inlineData: { data: base64Data, mimeType: 'image/png' } };
+        });
+        contentsPayload = [
+          { text: enhancedPrompt },
+          ...inlineDataParts
+        ];
+      }
+
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-preview-image-generation:generateContent?key=${keys.gemini}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: contentsPayload }],
+          generationConfig: { responseModalities: ["TEXT", "IMAGE"] }
+        })
+      });
+
+      if (!response.ok) throw new Error(`API Error: ${response.status}`);
+
+      const data = await response.json();
+      
+      for (const candidate of data.candidates || []) {
+        for (const part of candidate.content?.parts || []) {
+          if (part.inlineData && part.inlineData.mimeType?.startsWith('image/')) {
+            return part.inlineData.data;
+          }
+        }
+      }
+      
+      return null;
+    } catch (err) {
+      console.error('Error generando con Gemini:', err);
+      return null;
+    }
+  };
+
   const researchWithGemini = async (url: string, instructions: string): Promise<string[]> => {
     setStatusText('Investigando empresa en profundidad...');
     
     try {
+      const keys = getApiKeys();
       const researchPrompt = `Visita e investiga profundamente la empresa en la URL: "${url}". Usa Google Search para extraer detalles precisos: formas exactas de su logotipo real, colores corporativos, UI de su producto o mascotas. ${instructions.trim() ? `\n\nATENCIÓN, EL USUARIO REQUIERE QUE TE ENFOQUES ESPECÍFICAMENTE EN ESTO AL INVESTIGAR Y CREAR: "${instructions}". SI SE MENCIONAN VARIOS PRODUCTOS, INVESTIGA CADA UNO EN LA WEB/GOOGLE y dedica preferentemente un sticker a cada producto individual para poder cubrirlos.\n\n` : ''}Diseña 3 conceptos creativos para stickers de WhatsApp que INCLUYAN EXPLÍCITAMENTE y de manera visible el logo real de la empresa investigada o sus productos específicos. IMPORTANTE: Los stickers deben tener texto o frases divertidas, y TODO EL TEXTO DEBE ESTAR ESCRITO ESTRICTAMENTE EN ESPAÑOL (Castellano). Responde ESTRICTAMENTE un JSON array de 3 strings descriptivos. (Escribe el prompt visual en inglés para la IA de imagen, especificando qué logo/producto dibujar y qué palabras exactas en español generar tipográficamente).`;
 
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_API_KEY}`, {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${keys.gemini}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -81,77 +220,6 @@ export default function CreateSticker({ onStickerGenerated }: CreateStickerProps
     }
   };
 
-  const generateWithGemini = async (targetPrompt: string, index: number, total: number): Promise<string | null> => {
-    const isModify = mode === 'modify';
-    const isVariations = mode === 'variations';
-    
-    setStatusText(
-      isModify ? 'Aplicando modificación agresiva en imagen local...' :
-      isVariations ? `Generando variación individual (${index+1}/${total})...` :
-      total > 1 ? `Generando sticker con logo y texto (${index + 1}/${total})...` :
-      'Generando sticker corporativo en español...'
-    );
-
-    try {
-      let enhancedPrompt: string;
-      
-      if (isModify) {
-        enhancedPrompt = `A die-cut WhatsApp sticker design, perfectly isolated on a completely transparent background layer, 2D flat vector art style, thick clean white border around the character. \n\nCRITICAL MODIFICATION REQUEST: "${targetPrompt}". \n\nMANDATORY: You MUST forcefully transform the provided reference image based on the MODIFICATION REQUEST. Do NOT just copy the source. Add the requested items clearly and obviously in the final image. ALL TEXT OR TYPOGRAPHY IN THE FINAL IMAGE MUST BE IN PERFECT SPANISH.`;
-      } else if (isVariations) {
-        enhancedPrompt = `A die-cut WhatsApp sticker design, perfectly isolated on a completely transparent background layer, 2D flat vector art style, thick clean white border around the character. \n\nVARIATION REQUEST: "${targetPrompt}". \n\nMANDATORY REQUIREMENT: You MUST keep the physical visual identity, character, or object of the provided reference image(s). Do NOT change the main subject. But you MUST apply this specific variation perfectly. ALL TEXT TYPOGRAPHY MUST BE IN SPANISH STRICTLY.`;
-      } else {
-        const baseInstruction = mode === 'single' 
-          ? `Incorporate explicit visual references to real company logos, specific brands, or corporate mascots related to: "${targetPrompt}". The sticker MUST include catchy typography.`
-          : `Subject: ${targetPrompt}`;
-        
-        enhancedPrompt = `A die-cut WhatsApp sticker design, perfectly isolated on a completely transparent background layer (pure alpha background), 2D flat vector art style, thick clean white border around the object/character. NO background scenario or grid. High quality. REQUIREMENT: INTEGRATE ACTUAL REAL BRAND LOGOS, SPECIFIC PRODUCTS, UI, OR EXACT CORPORATE REFERENCES AS INSTRUCTED. MANDATORY RULE: ALL TEXT, LETTERS, TYPOGRAPHY, OR SPEECH BUBBLES IN THE IMAGE ABSOLUTELY MUST BE WRITTEN IN PERFECT SPANISH (CASTELLANO). DO NOT USE ENGLISH TEXT. \n\n${baseInstruction}`;
-      }
-
-      // Build contents payload
-      let contentsPayload: any = enhancedPrompt;
-      
-      // If we have reference images (modify/variations mode), include them
-      if ((isModify || isVariations) && referenceImages.length > 0) {
-        const inlineDataParts = referenceImages.map(img => {
-          const base64Data = img.includes(',') ? img.split(',')[1] : img;
-          return { inlineData: { data: base64Data, mimeType: 'image/png' } };
-        });
-        contentsPayload = [
-          { text: enhancedPrompt },
-          ...inlineDataParts
-        ];
-      } else {
-        contentsPayload = [{ text: enhancedPrompt }];
-      }
-
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-preview-image-generation:generateContent?key=${GEMINI_API_KEY}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: contentsPayload }],
-          generationConfig: { responseModalities: ["TEXT", "IMAGE"] }
-        })
-      });
-
-      if (!response.ok) throw new Error(`API Error: ${response.status}`);
-
-      const data = await response.json();
-      
-      for (const candidate of data.candidates || []) {
-        for (const part of candidate.content?.parts || []) {
-          if (part.inlineData && part.inlineData.mimeType?.startsWith('image/')) {
-            return part.inlineData.data;
-          }
-        }
-      }
-      
-      return null;
-    } catch (err) {
-      console.error('Error generando imagen:', err);
-      return null;
-    }
-  };
-
   const handleGenerate = async () => {
     // Validation
     if (mode === 'modify' || mode === 'variations') {
@@ -167,8 +235,19 @@ export default function CreateSticker({ onStickerGenerated }: CreateStickerProps
       if (!prompt.trim()) return;
     }
 
-    if (!GEMINI_API_KEY) {
-      setError("Falta configurar la API key de Gemini. Añade VITE_GEMINI_API_KEY en tu .env");
+    // Check provider key
+    if (provider === 'gemini' && !hasKey('gemini')) {
+      setError("Necesitas configurar tu API key de Gemini en Ajustes.");
+      return;
+    }
+    if (provider === 'minimax' && !hasKey('minimax')) {
+      setError("Necesitas configurar tu API key de Minimax en Ajustes.");
+      return;
+    }
+
+    // Minimax doesn't support modify/variations with reference images yet
+    if (provider === 'minimax' && (mode === 'modify' || mode === 'variations')) {
+      setError("Minimax no soporta modificación de imágenes de referencia. Usa Gemini o cambia de modo.");
       return;
     }
 
@@ -179,8 +258,8 @@ export default function CreateSticker({ onStickerGenerated }: CreateStickerProps
     try {
       let targetPrompts: string[] = [prompt];
 
-      // Research phase for set/url/modify/variations modes
-      if (mode === 'set' || mode === 'url' || mode === 'modify' || mode === 'variations') {
+      // Research phase for set/url/modify/variations modes (only Gemini has research)
+      if ((mode === 'set' || mode === 'url' || mode === 'modify' || mode === 'variations') && provider === 'gemini') {
         setStatusText(
           mode === 'modify' ? 'Investigando tu modificación y referencias...' :
           mode === 'variations' ? 'Ideando 4 variaciones del producto...' :
@@ -197,11 +276,10 @@ export default function CreateSticker({ onStickerGenerated }: CreateStickerProps
         } else if (mode === 'url') {
           systemInstruction = `Visita e investiga profundamente la empresa en la URL: "${prompt}". Usa Google Search para extraer detalles precisos: formas exactas de su logotipo real, colores corporativos, UI de su producto o mascotas. ${urlInstructions.trim() ? `\n\nATENCIÓN, EL USUARIO REQUIERE QUE TE ENFOQUES ESPECÍFICAMENTE EN ESTO AL INVESTIGAR Y CREAR: "${urlInstructions}". SI SE MENCIONAN VARIOS PRODUCTOS, INVESTIGA CADA UNO EN LA WEB/GOOGLE y dedica preferentemente un sticker a cada producto individual para poder cubrirlos.\n\n` : ''}Diseña 3 conceptos creativos para stickers de WhatsApp que INCLUYAN EXPLÍCITAMENTE y de manera visible el logo real de la empresa investigada o sus productos específicos. IMPORTANTE: Los stickers deben tener texto o frases divertidas, y TODO EL TEXTO DEBE ESTAR ESCRITO ESTRICTAMENTE EN ESPAÑOL (Castellano). Responde ESTRICTAMENTE un JSON array de 3 strings descriptivos. (Escribe el prompt visual en inglés para la IA de imagen, especificando qué logo/producto dibujar y qué palabras exactas en español generar tipográficamente).`;
         } else {
-          // set mode
           systemInstruction = `Usa Google Search para investigar marcas reales, logos de empresas o personajes corporativos relacionados con: "${prompt}". ATENCIÓN: Si se mencionan VARIOS PRODUCTOS, investiga CADA UNO en Google Search y dedica preferentemente un sticker a cada producto individual. Diseña 3 ideas para un set de stickers de WhatsApp que INCLUYAN DIRECTAMENTE LOS LOGOS, PRODUCTOS O MARCAS REALES investigadas. IMPORTANTE: Los stickers deben incluir texto/frases geniales, y ese texto DEBE ESTAR ESCRITO ESTRICTAMENTE EN ESPAÑOL (Castellano). Responde ESTRICTAMENTE un JSON array de 3 strings descriptivos. (Escribe el prompt visual de imagen en inglés, indicando el logo/producto a incluir y qué frase exacta en español colocar en el diseño).`;
         }
 
-        const textResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_API_KEY}`, {
+        const textResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${getApiKeys().gemini}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -225,13 +303,18 @@ export default function CreateSticker({ onStickerGenerated }: CreateStickerProps
             console.error("Failed to parse JSON array from Gemini", e);
           }
         }
+      } else if (mode === 'set' && provider === 'minimax') {
+        // For Minimax set mode, just create variations of the prompt
+        targetPrompts = [`${prompt} - versión 1`, `${prompt} - versión 2`, `${prompt} - versión 3`];
       }
 
       // Generate images
       const newResults: StickerResult[] = [];
       
       for (let i = 0; i < targetPrompts.length; i++) {
-        const base64Data = await generateWithGemini(targetPrompts[i], i, targetPrompts.length);
+        const base64Data = provider === 'gemini' 
+          ? await generateWithGemini(targetPrompts[i], i, targetPrompts.length)
+          : await generateWithMinimax(targetPrompts[i], i, targetPrompts.length);
         
         if (base64Data) {
           newResults.push({
@@ -254,7 +337,7 @@ export default function CreateSticker({ onStickerGenerated }: CreateStickerProps
           document.getElementById('results-section')?.scrollIntoView({ behavior: 'smooth' });
         }, 100);
       } else {
-        setError("No se pudo generar la imagen. Intenta modificar la petición.");
+        setError("No se pudo generar la imagen. Intenta modificar la petición o cambia de proveedor.");
       }
     } catch (err: any) {
       console.error(err);
@@ -280,6 +363,27 @@ export default function CreateSticker({ onStickerGenerated }: CreateStickerProps
 
   return (
     <div className="flex flex-col gap-8 w-full max-w-4xl mx-auto p-4 md:p-6 mb-16">
+      {/* Provider selector */}
+      <div className="flex items-center gap-4 justify-end">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-dim">Proveedor:</span>
+        <div className="flex border-2 border-ink text-xs font-bold uppercase tracking-widest overflow-hidden">
+          <button
+            onClick={() => setProvider('gemini')}
+            disabled={!hasKey('gemini')}
+            className={`px-3 py-2 transition-colors ${provider === 'gemini' ? 'bg-ink text-white' : 'bg-white text-ink hover:bg-gray-100'} ${!hasKey('gemini') ? 'opacity-30 cursor-not-allowed' : ''}`}
+          >
+            Gemini
+          </button>
+          <button
+            onClick={() => setProvider('minimax')}
+            disabled={!hasKey('minimax')}
+            className={`px-3 py-2 border-l-2 border-ink transition-colors ${provider === 'minimax' ? 'bg-ink text-white' : 'bg-white text-ink hover:bg-gray-100'} ${!hasKey('minimax') ? 'opacity-30 cursor-not-allowed' : ''}`}
+          >
+            <Zap className="w-3 h-3 inline mr-1" /> Minimax
+          </button>
+        </div>
+      </div>
+
       <div className="bg-white editorial-border p-8 flex flex-col gap-6 shadow-[10px_10px_0_rgba(0,0,0,0.05)]">
         <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6">
           <div className="flex items-center gap-3">
@@ -417,10 +521,10 @@ export default function CreateSticker({ onStickerGenerated }: CreateStickerProps
             {loading ? (
               <><Loader2 className="w-5 h-5 animate-spin" /> {statusText || 'GENERANDO...'}</>
             ) : (
-              <><Wand2 className="w-5 h-5" /> GENERAR {mode === 'set' || mode === 'url' ? 'SET DE STICKERS' : mode === 'variations' ? 'VARIACIONES' : mode === 'modify' ? 'MODIFICACIÓN' : 'STICKER'}</>
+              <><Wand2 className="w-5 h-5" /> GENERAR {mode === 'set' || mode === 'url' ? 'SET DE STICKERS' : mode === 'variations' ? 'VARIACIONES' : mode === 'modify' ? 'MODIFICACIÓN' : 'STICKER'} CON {provider.toUpperCase()}</>
             )}
           </button>
-          {loading && mode !== 'modify' && mode !== 'variations' && (
+          {loading && mode !== 'modify' && mode !== 'variations' && provider === 'gemini' && (
             <div className="flex items-center gap-2 text-[10px] font-mono text-dim tracking-widest uppercase animate-pulse">
               <Search className="w-3 h-3" /> Búsqueda y Análisis en vivo activado
             </div>

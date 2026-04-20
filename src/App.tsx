@@ -1,13 +1,25 @@
 import { useState, useEffect } from 'react';
+import { ApiProvider } from './context/ApiContext';
 import CreateSticker from './components/CreateSticker';
 import Presentations from './components/Presentations';
 import Merchandising from './components/Merchandising';
 import ImageEditor from './components/ImageEditor';
-import { Sparkles, Presentation, Shirt, Palette, CheckCircle2 } from 'lucide-react';
+import MusicGenerator from './components/MusicGenerator';
+import VoiceClone from './components/VoiceClone';
+import Settings from './components/Settings';
+import { Sparkles, Presentation, Shirt, Palette, Music, Mic, KeyRound, CheckCircle2 } from 'lucide-react';
 
-type Tab = 'create' | 'presentations' | 'merchandising' | 'editor';
+type Tab = 'create' | 'presentations' | 'merchandising' | 'editor' | 'music' | 'voice' | 'settings';
 
-export default function App() {
+export default function WrappedApp() {
+  return (
+    <ApiProvider>
+      <App />
+    </ApiProvider>
+  );
+}
+
+function App() {
   const [activeTab, setActiveTab] = useState<Tab>('create');
   const [sharedBase64, setSharedBase64] = useState<string | null>(null);
 
@@ -20,6 +32,9 @@ export default function App() {
     { id: 'presentations' as Tab, label: 'Presentaciones', icon: Presentation },
     { id: 'merchandising' as Tab, label: 'Merchandising', icon: Shirt },
     { id: 'editor' as Tab, label: 'Editor', icon: Palette },
+    { id: 'music' as Tab, label: 'Música AI', icon: Music },
+    { id: 'voice' as Tab, label: 'Voice Clone', icon: Mic },
+    { id: 'settings' as Tab, label: 'Ajustes', icon: KeyRound },
   ];
 
   const switchToEditor = () => {
@@ -40,7 +55,7 @@ export default function App() {
         <div className="flex items-center gap-2 mt-4 md:mt-0">
           <div className="w-3 h-3 rounded-full bg-accent"></div>
           <span className="text-[10px] uppercase tracking-[2px] font-bold">
-            by Rebeca Caparrós
+            by Eleonor
           </span>
         </div>
       </header>
@@ -72,6 +87,9 @@ export default function App() {
         {activeTab === 'presentations' && <Presentations />}
         {activeTab === 'merchandising' && <Merchandising />}
         {activeTab === 'editor' && <ImageEditor />}
+        {activeTab === 'music' && <MusicGenerator />}
+        {activeTab === 'voice' && <VoiceClone />}
+        {activeTab === 'settings' && <Settings />}
       </div>
 
       {sharedBase64 && activeTab === 'create' && (
