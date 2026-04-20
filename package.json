@@ -7,6 +7,7 @@
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
     "preview": "vite preview",
+    "deploy": "wrangler deploy",
     "server": "python server/app.py",
     "clean": "rm -rf dist"
   },
