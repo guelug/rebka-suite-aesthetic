@@ -61,10 +61,10 @@ function App() {
           </div>
           <button
             onClick={() => setShowSettings(!showSettings)}
-            className="p-2 hover:bg-gray-100 rounded-full transition-colors border-2 border-ink"
+            className="p-1 hover:bg-gray-100 rounded-full transition-colors border border-ink"
             title="Configurar API Keys"
           >
-            <KeyRound className="w-4 h-4 text-ink" />
+            <KeyRound className="w-3 h-3 text-ink" />
           </button>
         </div>
       </header>
