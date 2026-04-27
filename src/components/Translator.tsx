@@ -1,9 +1,10 @@
 import { useState, useRef } from 'react';
 import { useApiKeys } from '../context/ApiContext';
-import { Languages, Loader2, Upload, Download, Trash2, ArrowRightLeft, CheckCircle2, AlertCircle, Image as ImageIcon, FileText } from 'lucide-react';
+import { Languages, Loader2, Upload, Download, Trash2, ArrowRightLeft, CheckCircle2, AlertCircle, Image as ImageIcon, FileText, Package } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { PDFDocument } from 'pdf-lib';
 import { saveAs } from 'file-saver';
+import JSZip from 'jszip';
 
 // Polyfill para Math.sumPrecise (no soportado en todos los navegadores)
 if (typeof Math.sumPrecise !== 'function') {
@@ -251,6 +252,32 @@ export default function Translator() {
     });
   };
 
+  // Descargar todas las imágenes traducidas como ZIP
+  const downloadImagesAsZip = async (pages: PageInfo[], originalFileName: string, dir: TranslationDirection) => {
+    const zip = new JSZip();
+    const folder = zip.folder('traducido');
+    const suffix = dir === 'en-to-es' ? '_ES' : '_EN';
+    const baseName = originalFileName.replace(/\.pdf$/i, '');
+
+    for (const page of pages) {
+      if (!page.translatedBase64) continue;
+      
+      // Detectar extensión por el mime type
+      const isJpeg = page.translatedBase64.includes('image/jpeg') || page.translatedBase64.includes('image/jpg');
+      const ext = isJpeg ? 'jpg' : 'png';
+      const fileName = `${baseName}_pagina${page.pageNum.toString().padStart(3, '0')}${suffix}.${ext}`;
+      
+      // Extraer bytes base64
+      const base64Data = page.translatedBase64.split(',')[1];
+      const bytes = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+      
+      folder?.file(fileName, bytes);
+    }
+
+    const content = await zip.generateAsync({ type: 'blob' });
+    saveAs(content, `${baseName}_imagenes${suffix}.zip`);
+  };
+
   const handleTranslate = async () => {
     if (!file || !hasKey('gemini')) {
       setError(hasKey('gemini') ? 'Primero sube un archivo.' : 'Necesitas configurar tu API key de Gemini en Ajustes.');
@@ -334,13 +361,27 @@ export default function Translator() {
         const donePages = translatedPages.filter(p => p.status === 'done');
         if (donePages.length === 0) throw new Error('No se pudo traducir ninguna página.');
 
-        setStatusText('Reconstruyendo PDF...');
-        const pdfBytes = await rebuildPdf(translatedPages);
-        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-        const originalName = file.name.replace(/\.pdf$/i, '');
-        const suffix = direction === 'en-to-es' ? '_ES' : '_EN';
-        saveAs(blob, `${originalName}${suffix}.pdf`);
-        setStatusText('¡PDF traducido y descargado!');
+        let pdfSuccess = false;
+        try {
+          setStatusText('Reconstruyendo PDF...');
+          const pdfBytes = await rebuildPdf(translatedPages);
+          const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+          const originalName = file.name.replace(/\.pdf$/i, '');
+          const suffix = direction === 'en-to-es' ? '_ES' : '_EN';
+          saveAs(blob, `${originalName}${suffix}.pdf`);
+          pdfSuccess = true;
+          setStatusText('¡PDF traducido y descargado!');
+        } catch (pdfErr: any) {
+          console.error('Error reconstruyendo PDF:', pdfErr);
+          setError(`Error al crear PDF: ${pdfErr.message}. Puedes descargar las imágenes individuales como ZIP.`);
+        }
+
+        // Siempre ofrecer ZIP con las imágenes traducidas (útil si el PDF falla o como backup)
+        if (!pdfSuccess) {
+          setStatusText('Generando ZIP con imágenes...');
+          await downloadImagesAsZip(translatedPages, file.name, direction);
+          setStatusText('¡Imágenes descargadas como ZIP!');
+        }
       }
     } catch (err: any) {
       console.error(err);
@@ -509,6 +550,17 @@ export default function Translator() {
                 </button>
               )}
             </div>
+
+            {/* Descargar imágenes como ZIP (siempre disponible si hay páginas traducidas) */}
+            {fileType === 'pdf' && pages.some(p => p.translatedBase64) && !loading && (
+              <button
+                onClick={() => downloadImagesAsZip(pages, file.name, direction)}
+                className="w-full py-3 px-4 border-2 border-dim text-dim font-bold text-xs uppercase tracking-widest hover:border-ink hover:text-ink hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+              >
+                <Package className="w-4 h-4" />
+                DESCARGAR IMÁGENES TRADUCIDAS COMO ZIP (BACKUP)
+              </button>
+            )}
           </div>
         )}
 
