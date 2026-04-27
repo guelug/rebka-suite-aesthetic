@@ -1,15 +1,15 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef } from 'react';
 import { useApiKeys } from '../context/ApiContext';
-import { FileText, Loader2, Upload, Download, Trash2, ArrowRightLeft, CheckCircle2, AlertCircle, Languages, Image as ImageIcon } from 'lucide-react';
+import { Languages, Loader2, Upload, Download, Trash2, ArrowRightLeft, CheckCircle2, AlertCircle, Image as ImageIcon, FileText } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
-import { PDFDocument, PDFImage } from 'pdf-lib';
-import JSZip from 'jszip';
+import { PDFDocument } from 'pdf-lib';
 import { saveAs } from 'file-saver';
 
 // Set PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 type TranslationDirection = 'en-to-es' | 'es-to-en';
+type FileType = 'image' | 'pdf' | null;
 type PageStatus = 'pending' | 'rendering' | 'translating' | 'done' | 'error';
 
 interface PageInfo {
@@ -20,55 +20,108 @@ interface PageInfo {
   error?: string;
 }
 
-export default function PdfTranslator() {
+interface TranslationResult {
+  base64: string;
+  url: string;
+  direction: TranslationDirection;
+}
+
+export default function Translator() {
   const { hasKey } = useApiKeys();
-  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [fileType, setFileType] = useState<FileType>(null);
+  const [sourceImage, setSourceImage] = useState<string | null>(null);
   const [direction, setDirection] = useState<TranslationDirection>('en-to-es');
-  const [pages, setPages] = useState<PageInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [statusText, setStatusText] = useState('');
-  const [error, setError] = useState('');
+  const [result, setResult] = useState<TranslationResult | null>(null);
+  const [pages, setPages] = useState<PageInfo[]>([]);
   const [overallProgress, setOverallProgress] = useState({ done: 0, total: 0 });
+  const [error, setError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<boolean>(false);
 
+  const detectFileType = (f: File): FileType => {
+    if (f.type.startsWith('image/')) return 'image';
+    if (f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')) return 'pdf';
+    return null;
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 50 * 1024 * 1024) {
-        setError('Archivo demasiado grande. Máximo 50MB.');
-        return;
-      }
-      if (!file.type.includes('pdf')) {
-        setError('Solo se aceptan archivos PDF.');
-        return;
-      }
-      setPdfFile(file);
-      setPages([]);
-      setError('');
-      setOverallProgress({ done: 0, total: 0 });
+    const selected = e.target.files?.[0];
+    if (!selected) return;
+
+    const type = detectFileType(selected);
+    if (!type) {
+      setError('Solo se aceptan imágenes (JPG, PNG, WebP) o archivos PDF.');
+      return;
+    }
+
+    if (type === 'image' && selected.size > 10 * 1024 * 1024) {
+      setError('Imagen demasiado grande. Máximo 10MB.');
+      return;
+    }
+    if (type === 'pdf' && selected.size > 50 * 1024 * 1024) {
+      setError('PDF demasiado grande. Máximo 50MB.');
+      return;
+    }
+
+    setFile(selected);
+    setFileType(type);
+    setError('');
+    setResult(null);
+    setPages([]);
+    setOverallProgress({ done: 0, total: 0 });
+
+    if (type === 'image') {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setSourceImage(event.target?.result as string);
+      };
+      reader.readAsDataURL(selected);
+    } else {
+      setSourceImage(null);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const dropped = e.dataTransfer.files[0];
+    if (!dropped) return;
+
+    const type = detectFileType(dropped);
+    if (!type) {
+      setError('Solo se aceptan imágenes (JPG, PNG, WebP) o archivos PDF.');
+      return;
+    }
+
+    setFile(dropped);
+    setFileType(type);
+    setError('');
+    setResult(null);
+    setPages([]);
+    setOverallProgress({ done: 0, total: 0 });
+
+    if (type === 'image') {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setSourceImage(event.target?.result as string);
+      };
+      reader.readAsDataURL(dropped);
+    } else {
+      setSourceImage(null);
     }
   };
 
   const clearFile = () => {
-    setPdfFile(null);
+    setFile(null);
+    setFileType(null);
+    setSourceImage(null);
+    setResult(null);
     setPages([]);
     setError('');
     setOverallProgress({ done: 0, total: 0 });
     if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  // Convert PDF page to image (base64 PNG)
-  const renderPageToImage = async (pdfDoc: pdfjsLib.PDFDocumentProxy, pageNum: number): Promise<string> => {
-    const page = await pdfDoc.getPage(pageNum);
-    const scale = 2.0; // High quality
-    const viewport = page.getViewport({ scale });
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d')!;
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    await page.render({ canvasContext: ctx, viewport }).promise;
-    return canvas.toDataURL('image/png');
   };
 
   // Translate a single image using Gemini
@@ -112,6 +165,19 @@ export default function PdfTranslator() {
     throw new Error('No image returned from Gemini');
   };
 
+  // Convert PDF page to image
+  const renderPageToImage = async (pdfDoc: pdfjsLib.PDFDocumentProxy, pageNum: number): Promise<string> => {
+    const page = await pdfDoc.getPage(pageNum);
+    const scale = 2.0;
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d')!;
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    return canvas.toDataURL('image/png');
+  };
+
   // Rebuild PDF from translated images
   const rebuildPdf = async (pages: PageInfo[]): Promise<Uint8Array> => {
     const newPdf = await PDFDocument.create();
@@ -128,8 +194,8 @@ export default function PdfTranslator() {
   };
 
   const handleTranslate = async () => {
-    if (!pdfFile || !hasKey('gemini')) {
-      setError(hasKey('gemini') ? 'Primero sube un PDF.' : 'Necesitas configurar tu API key de Gemini en Ajustes.');
+    if (!file || !hasKey('gemini')) {
+      setError(hasKey('gemini') ? 'Primero sube un archivo.' : 'Necesitas configurar tu API key de Gemini en Ajustes.');
       return;
     }
 
@@ -141,88 +207,86 @@ export default function PdfTranslator() {
       const keys = JSON.parse(localStorage.getItem('rebka_api_keys') || '{}');
       const apiKey = keys.gemini;
 
-      // Step 1: Load PDF and render pages to images
-      setStatusText('Cargando PDF y renderizando páginas...');
-      const arrayBuffer = await pdfFile.arrayBuffer();
-      const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      const numPages = pdfDoc.numPages;
-
-      const initialPages: PageInfo[] = [];
-      for (let i = 1; i <= numPages; i++) {
-        initialPages.push({
-          pageNum: i,
-          status: 'pending',
-          originalBase64: '',
-          translatedBase64: null
+      if (fileType === 'image') {
+        // Single image translation
+        setStatusText('Traduciendo imagen con Gemini 3.1...');
+        if (!sourceImage) throw new Error('Error al leer la imagen');
+        
+        const translated = await translateImageWithGemini(sourceImage, apiKey, direction);
+        setResult({
+          base64: translated.split(',')[1],
+          url: translated,
+          direction
         });
-      }
-      setPages(initialPages);
-      setOverallProgress({ done: 0, total: numPages });
+      } else if (fileType === 'pdf') {
+        // PDF translation
+        setStatusText('Cargando PDF...');
+        const arrayBuffer = await file.arrayBuffer();
+        const pdfDoc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        const numPages = pdfDoc.numPages;
 
-      // Step 2: Render each page to image
-      const renderedPages: PageInfo[] = [];
-      for (let i = 0; i < numPages; i++) {
-        if (abortRef.current) break;
-        setStatusText(`Renderizando página ${i + 1} de ${numPages}...`);
-        const base64 = await renderPageToImage(pdfDoc, i + 1);
-        renderedPages.push({
-          pageNum: i + 1,
-          status: 'translating',
-          originalBase64: base64,
-          translatedBase64: null
-        });
-        setPages(prev => {
-          const copy = [...prev];
-          copy[i] = { ...copy[i], status: 'translating', originalBase64: base64 };
-          return copy;
-        });
-      }
+        const initialPages: PageInfo[] = [];
+        for (let i = 1; i <= numPages; i++) {
+          initialPages.push({ pageNum: i, status: 'pending', originalBase64: '', translatedBase64: null });
+        }
+        setPages(initialPages);
+        setOverallProgress({ done: 0, total: numPages });
 
-      // Step 3: Translate each page
-      const translatedPages: PageInfo[] = [...renderedPages];
-      for (let i = 0; i < translatedPages.length; i++) {
-        if (abortRef.current) break;
-        setStatusText(`Traduciendo página ${i + 1} de ${numPages}...`);
-        try {
-          const translated = await translateImageWithGemini(translatedPages[i].originalBase64, apiKey, direction);
-          translatedPages[i].translatedBase64 = translated;
-          translatedPages[i].status = 'done';
+        // Render pages
+        const renderedPages: PageInfo[] = [];
+        for (let i = 0; i < numPages; i++) {
+          if (abortRef.current) break;
+          setStatusText(`Renderizando página ${i + 1} de ${numPages}...`);
+          const base64 = await renderPageToImage(pdfDoc, i + 1);
+          renderedPages.push({ pageNum: i + 1, status: 'translating', originalBase64: base64, translatedBase64: null });
           setPages(prev => {
             const copy = [...prev];
-            copy[i] = { ...copy[i], translatedBase64: translated, status: 'done' };
-            return copy;
-          });
-          setOverallProgress({ done: i + 1, total: numPages });
-        } catch (err: any) {
-          translatedPages[i].status = 'error';
-          translatedPages[i].error = err.message;
-          setPages(prev => {
-            const copy = [...prev];
-            copy[i] = { ...copy[i], status: 'error', error: err.message };
+            copy[i] = { ...copy[i], status: 'translating', originalBase64: base64 };
             return copy;
           });
         }
+
+        // Translate pages
+        const translatedPages: PageInfo[] = [...renderedPages];
+        for (let i = 0; i < translatedPages.length; i++) {
+          if (abortRef.current) break;
+          setStatusText(`Traduciendo página ${i + 1} de ${numPages}...`);
+          try {
+            const translated = await translateImageWithGemini(translatedPages[i].originalBase64, apiKey, direction);
+            translatedPages[i].translatedBase64 = translated;
+            translatedPages[i].status = 'done';
+            setPages(prev => {
+              const copy = [...prev];
+              copy[i] = { ...copy[i], translatedBase64: translated, status: 'done' };
+              return copy;
+            });
+            setOverallProgress({ done: i + 1, total: numPages });
+          } catch (err: any) {
+            translatedPages[i].status = 'error';
+            translatedPages[i].error = err.message;
+            setPages(prev => {
+              const copy = [...prev];
+              copy[i] = { ...copy[i], status: 'error', error: err.message };
+              return copy;
+            });
+          }
+        }
+
+        // Rebuild PDF
+        const donePages = translatedPages.filter(p => p.status === 'done');
+        if (donePages.length === 0) throw new Error('No se pudo traducir ninguna página.');
+
+        setStatusText('Reconstruyendo PDF...');
+        const pdfBytes = await rebuildPdf(translatedPages);
+        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+        const originalName = file.name.replace(/\.pdf$/i, '');
+        const suffix = direction === 'en-to-es' ? '_ES' : '_EN';
+        saveAs(blob, `${originalName}${suffix}.pdf`);
+        setStatusText('¡PDF traducido y descargado!');
       }
-
-      // Step 4: Rebuild PDF
-      const donePages = translatedPages.filter(p => p.status === 'done');
-      if (donePages.length === 0) {
-        throw new Error('No se pudo traducir ninguna página.');
-      }
-
-      setStatusText('Reconstruyendo PDF...');
-      const pdfBytes = await rebuildPdf(translatedPages);
-
-      // Download
-      const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-      const originalName = pdfFile.name.replace(/\.pdf$/i, '');
-      const suffix = direction === 'en-to-es' ? '_ES' : '_EN';
-      saveAs(blob, `${originalName}${suffix}.pdf`);
-
-      setStatusText('¡PDF traducido y descargado!');
     } catch (err: any) {
       console.error(err);
-      setError(err.message || 'Error al procesar el PDF.');
+      setError(err.message || 'Error al traducir.');
     } finally {
       setLoading(false);
     }
@@ -239,8 +303,8 @@ export default function PdfTranslator() {
       <div className="flex flex-col gap-8 w-full max-w-4xl mx-auto p-4 md:p-6 mb-16">
         <div className="bg-white editorial-border p-8 flex flex-col gap-6 shadow-[10px_10px_0_rgba(0,0,0,0.05)]">
           <div className="flex items-center gap-3">
-            <FileText className="w-6 h-6 text-accent" />
-            <h2 className="font-serif text-5xl tracking-tighter leading-[0.8] uppercase">PDF TRANSLATOR.</h2>
+            <Languages className="w-6 h-6 text-accent" />
+            <h2 className="font-serif text-5xl tracking-tighter leading-[0.8] uppercase">TRANSLATOR.</h2>
           </div>
           <div className="text-accent font-bold uppercase p-4 border border-accent bg-red-50 text-xs">
             Configura tu API key de Gemini en Ajustes para usar esta función.
@@ -254,12 +318,12 @@ export default function PdfTranslator() {
     <div className="flex flex-col gap-8 w-full max-w-4xl mx-auto p-4 md:p-6 mb-16">
       <div className="bg-white editorial-border p-8 flex flex-col gap-6 shadow-[10px_10px_0_rgba(0,0,0,0.05)]">
         <div className="flex items-center gap-3">
-          <FileText className="w-6 h-6 text-accent" />
-          <h2 className="font-serif text-5xl tracking-tighter leading-[0.8] uppercase">PDF TRANSLATOR.</h2>
+          <Languages className="w-6 h-6 text-accent" />
+          <h2 className="font-serif text-5xl tracking-tighter leading-[0.8] uppercase">TRANSLATOR.</h2>
         </div>
 
         <p className="font-sans font-semibold text-sm uppercase tracking-wide text-dim border-l-2 border-accent pl-4">
-          Traduce documentos PDF completos de inglés a español (o viceversa). Cada página se convierte a imagen, se traduce con Gemini 3.1 Flash manteniendo diseño original, y se reconstruye como PDF. Ideal para infografías, presentaciones y documentos visuales.
+          Traduce imágenes y documentos PDF de inglés a español (o viceversa). Sube una imagen o PDF y mantendremos el diseño original.
         </p>
 
         {/* Direction Selector */}
@@ -286,39 +350,32 @@ export default function PdfTranslator() {
         </div>
 
         {/* Upload Area */}
-        {!pdfFile ? (
+        {!file ? (
           <label
             className="w-full h-64 border-2 border-dashed border-dim hover:border-ink hover:bg-gray-50 flex items-center justify-center cursor-pointer transition-colors text-dim font-bold flex-col gap-3"
             onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => {
-              e.preventDefault();
-              const file = e.dataTransfer.files[0];
-              if (file && file.type.includes('pdf')) {
-                setPdfFile(file);
-                setPages([]);
-                setError('');
-              }
-            }}
+            onDrop={handleDrop}
           >
-            <FileText className="w-10 h-10 text-accent" />
-            <span>Arrastra o haz clic para subir PDF</span>
-            <span className="text-[10px] font-normal">Máximo 50MB • Solo archivos PDF</span>
+            <ImageIcon className="w-10 h-10 text-accent" />
+            <span>Arrastra o haz clic para subir imagen o PDF</span>
+            <span className="text-[10px] font-normal">Imágenes: máx 10MB • PDF: máx 50MB</span>
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf,application/pdf"
+              accept="image/*,.pdf,application/pdf"
               className="hidden"
               onChange={handleFileChange}
             />
           </label>
         ) : (
           <div className="flex flex-col gap-4">
+            {/* File info */}
             <div className="flex items-center justify-between bg-gray-50 p-4 editorial-border">
               <div className="flex items-center gap-3">
-                <FileText className="w-8 h-8 text-accent" />
+                {fileType === 'image' ? <ImageIcon className="w-8 h-8 text-accent" /> : <FileText className="w-8 h-8 text-accent" />}
                 <div>
-                  <p className="font-bold text-sm">{pdfFile.name}</p>
-                  <p className="text-[10px] text-dim">{(pdfFile.size / 1024 / 1024).toFixed(2)} MB</p>
+                  <p className="font-bold text-sm">{file.name}</p>
+                  <p className="text-[10px] text-dim">{(file.size / 1024 / 1024).toFixed(2)} MB • {fileType === 'image' ? 'Imagen' : 'PDF'}</p>
                 </div>
               </div>
               <button
@@ -330,8 +387,16 @@ export default function PdfTranslator() {
               </button>
             </div>
 
-            {/* Progress */}
-            {pages.length > 0 && (
+            {/* Image preview */}
+            {fileType === 'image' && sourceImage && (
+              <div className="relative w-full max-w-md mx-auto">
+                <img src={sourceImage} alt="Original" className="w-full h-auto editorial-border" />
+                <div className="absolute bottom-2 left-2 px-2 py-1 bg-ink text-white text-[10px] font-bold uppercase">Original</div>
+              </div>
+            )}
+
+            {/* PDF progress grid */}
+            {fileType === 'pdf' && pages.length > 0 && (
               <div className="flex flex-col gap-2">
                 <div className="flex justify-between text-[10px] font-bold uppercase tracking-widest text-dim">
                   <span>Progreso: {overallProgress.done} / {overallProgress.total} páginas</span>
@@ -343,8 +408,6 @@ export default function PdfTranslator() {
                     style={{ width: `${overallProgress.total > 0 ? (overallProgress.done / overallProgress.total) * 100 : 0}%` }}
                   />
                 </div>
-
-                {/* Page grid */}
                 <div className="grid grid-cols-4 md:grid-cols-6 gap-2 mt-2">
                   {pages.map((page) => (
                     <div
@@ -366,6 +429,7 @@ export default function PdfTranslator() {
               </div>
             )}
 
+            {/* Action buttons */}
             <div className="flex gap-3">
               <button
                 onClick={handleTranslate}
@@ -375,7 +439,7 @@ export default function PdfTranslator() {
                 {loading ? (
                   <><Loader2 className="w-5 h-5 animate-spin" /> {statusText || 'PROCESANDO...'}</>
                 ) : (
-                  <><Languages className="w-5 h-5" /> TRADUCIR PDF</>
+                  <><Languages className="w-5 h-5" /> {fileType === 'image' ? 'TRADUCIR IMAGEN' : 'TRADUCIR PDF'}</>
                 )}
               </button>
               {loading && (
@@ -392,6 +456,28 @@ export default function PdfTranslator() {
 
         {error && <div className="text-accent font-bold uppercase p-4 border border-accent bg-red-50 text-xs">{error}</div>}
       </div>
+
+      {/* Image result */}
+      {result && fileType === 'image' && (
+        <div className="bg-white editorial-border p-8 flex flex-col gap-6 shadow-[10px_10px_0_rgba(0,0,0,0.05)]">
+          <h2 className="font-serif text-4xl tracking-tighter leading-[0.8] self-start uppercase">TRADUCCIÓN.</h2>
+          <div className="flex flex-col items-center gap-4">
+            <div className="relative w-full max-w-2xl">
+              <img src={result.url} alt="Translated" className="w-full h-auto editorial-border" />
+              <div className="absolute bottom-2 left-2 px-2 py-1 bg-green-500 text-white text-[10px] font-bold uppercase">
+                {result.direction === 'en-to-es' ? 'ESPAÑOL' : 'ENGLISH'} • Sin marca de agua
+              </div>
+            </div>
+            <a
+              href={result.url}
+              download={`translated-${result.direction}.png`}
+              className="btn-editorial w-full max-w-md bg-transparent text-ink editorial-border px-4 py-3 text-xs flex items-center justify-center gap-2 hover:bg-ink hover:text-white transition-colors"
+            >
+              <Download className="w-4 h-4" /> DESCARGAR PNG TRADUCIDO
+            </a>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

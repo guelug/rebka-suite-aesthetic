@@ -5,14 +5,13 @@ import Presentations from './components/Presentations';
 import Merchandising from './components/Merchandising';
 import ImageEditor from './components/ImageEditor';
 import ImageUpscale from './components/ImageUpscale';
-import ImageTranslator from './components/ImageTranslator';
-import PdfTranslator from './components/PdfTranslator';
+import Translator from './components/Translator';
 import MusicGenerator from './components/MusicGenerator';
 import VoiceClone from './components/VoiceClone';
 import Settings from './components/Settings';
-import { Sparkles, Presentation, Shirt, Palette, Maximize, Languages, FileText, Music, Mic, KeyRound, CheckCircle2 } from 'lucide-react';
+import { Sparkles, Presentation, Shirt, Palette, Maximize, Languages, Music, Mic, KeyRound, CheckCircle2 } from 'lucide-react';
 
-type Tab = 'create' | 'presentations' | 'merchandising' | 'editor' | 'upscale' | 'translator' | 'pdf' | 'music' | 'voice';
+type Tab = 'create' | 'presentations' | 'merchandising' | 'editor' | 'upscale' | 'translator' | 'music' | 'voice';
 
 export default function WrappedApp() {
   return (
@@ -38,7 +37,6 @@ function App() {
     { id: 'editor' as Tab, label: 'Editor', icon: Palette },
     { id: 'upscale' as Tab, label: 'Upscale', icon: Maximize },
     { id: 'translator' as Tab, label: 'Traductor', icon: Languages },
-    { id: 'pdf' as Tab, label: 'PDF', icon: FileText },
     { id: 'music' as Tab, label: 'Música AI', icon: Music },
     { id: 'voice' as Tab, label: 'Voice Clone', icon: Mic },
   ];
@@ -103,8 +101,7 @@ function App() {
         {activeTab === 'merchandising' && <Merchandising />}
         {activeTab === 'editor' && <ImageEditor />}
         {activeTab === 'upscale' && <ImageUpscale />}
-        {activeTab === 'translator' && <ImageTranslator />}
-        {activeTab === 'pdf' && <PdfTranslator />}
+        {activeTab === 'translator' && <Translator />}
         {activeTab === 'music' && <MusicGenerator />}
         {activeTab === 'voice' && <VoiceClone />}
       </div>
