@@ -1,3 +1,11 @@
+// Polyfill Math.sumPrecise for older browsers
+if (typeof Math.sumPrecise !== 'function') {
+  Math.sumPrecise = function(values) {
+    var sum = 0;
+    for (var i = 0; i < values.length; i++) sum += values[i];
+    return sum;
+  };
+}
 /**
  * @licstart The following is the entire license notice for the
  * JavaScript code in this page
