@@ -140,7 +140,16 @@ export default function Translator() {
     const sourceLang = dir === 'en-to-es' ? 'English' : 'Spanish';
     const targetLang = dir === 'en-to-es' ? 'Spanish' : 'English';
 
-    const prompt = `Translate all text in this image from ${sourceLang} to ${targetLang}. Preserve the original design, layout, colors, typography style, and visual elements exactly. Replace only the text content with the translated version, keeping the same font style, size, and positioning. Output a clean, professional image without any watermarks or overlays.`;
+    const prompt = `You are a professional graphic designer and translator. Translate all text in this image from ${sourceLang} to ${targetLang}.
+
+CRITICAL INSTRUCTIONS:
+1. PRESERVE EXACTLY: font sizes, text hierarchy, layout positioning, spacing, colors, and visual proportions.
+2. Small text (footnotes, captions, labels, fine print) MUST remain small. Do NOT enlarge tiny text.
+3. Large text (headlines, titles) MUST remain large. Do NOT shrink big text.
+4. Maintain the same relative text sizes: if text A is 3x bigger than text B in the original, it must stay 3x bigger in the translation.
+5. Keep all visual elements (logos, icons, lines, boxes, backgrounds) exactly as they are.
+6. Adapt the translation to fit naturally in the same space - use concise wording if needed to maintain proportions.
+7. Output a clean, professional image without any watermarks, overlays, or added elements.`;
 
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent?key=${apiKey}`, {
       method: 'POST',
