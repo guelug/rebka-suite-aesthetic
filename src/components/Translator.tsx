@@ -5,6 +5,15 @@ import * as pdfjsLib from 'pdfjs-dist';
 import { PDFDocument } from 'pdf-lib';
 import { saveAs } from 'file-saver';
 
+// Polyfill para Math.sumPrecise (no soportado en todos los navegadores)
+if (typeof Math.sumPrecise !== 'function') {
+  Math.sumPrecise = (values: Iterable<number>): number => {
+    let sum = 0;
+    for (const v of values) sum += v;
+    return sum;
+  };
+}
+
 // Worker local (copiado a /public/ desde node_modules/pdfjs-dist/build/)
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
@@ -183,14 +192,63 @@ export default function Translator() {
     const newPdf = await PDFDocument.create();
     for (const page of pages) {
       if (!page.translatedBase64) continue;
-      const imgData = page.translatedBase64.split(',')[1];
-      const imgBytes = Uint8Array.from(atob(imgData), c => c.charCodeAt(0));
-      const img = await newPdf.embedPng(imgBytes);
+      
+      const base64Data = page.translatedBase64.split(',')[1];
+      const imgBytes = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+      
+      // Detectar formato real por magic bytes (no por mime type del data URL)
+      const isPng = imgBytes[0] === 0x89 && imgBytes[1] === 0x50 && imgBytes[2] === 0x4E && imgBytes[3] === 0x47;
+      const isJpeg = imgBytes[0] === 0xFF && imgBytes[1] === 0xD8 && imgBytes[2] === 0xFF;
+      
+      let img;
+      try {
+        if (isPng) {
+          img = await newPdf.embedPng(imgBytes);
+        } else if (isJpeg) {
+          img = await newPdf.embedJpg(imgBytes);
+        } else {
+          // Formato desconocido, intentar convertir a PNG via canvas
+          console.warn(`Página ${page.pageNum}: formato desconocido, convirtiendo via canvas`);
+          const convertedPng = await convertToPng(page.translatedBase64);
+          const convertedBytes = Uint8Array.from(atob(convertedPng.split(',')[1]), c => c.charCodeAt(0));
+          img = await newPdf.embedPng(convertedBytes);
+        }
+      } catch (err) {
+        console.error(`Error embebiendo página ${page.pageNum}:`, err);
+        // Fallback: convertir a PNG via canvas
+        try {
+          const convertedPng = await convertToPng(page.translatedBase64);
+          const convertedBytes = Uint8Array.from(atob(convertedPng.split(',')[1]), c => c.charCodeAt(0));
+          img = await newPdf.embedPng(convertedBytes);
+        } catch (fallbackErr) {
+          console.error(`Página ${page.pageNum} saltada:`, fallbackErr);
+          continue;
+        }
+      }
+      
       const { width, height } = img.scale(1);
       const pdfPage = newPdf.addPage([width, height]);
       pdfPage.drawImage(img, { x: 0, y: 0, width, height });
     }
     return await newPdf.save();
+  };
+
+  // Convertir cualquier imagen a PNG usando canvas (fallback)
+  const convertToPng = (dataUrl: string): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return reject(new Error('No canvas context'));
+        ctx.drawImage(img, 0, 0);
+        resolve(canvas.toDataURL('image/png'));
+      };
+      img.onerror = () => reject(new Error('Failed to load image for conversion'));
+      img.src = dataUrl;
+    });
   };
 
   const handleTranslate = async () => {
