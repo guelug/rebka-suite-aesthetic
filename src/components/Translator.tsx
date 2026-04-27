@@ -5,8 +5,8 @@ import * as pdfjsLib from 'pdfjs-dist';
 import { PDFDocument } from 'pdf-lib';
 import { saveAs } from 'file-saver';
 
-// Set PDF.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+// Worker local (copiado a /public/ desde node_modules/pdfjs-dist/build/)
+pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
 type TranslationDirection = 'en-to-es' | 'es-to-en';
 type FileType = 'image' | 'pdf' | null;
